@@ -1,0 +1,64 @@
+{
+  "name": "ilumia-snipebot",
+  "version": "1.8.0",
+  "description": "ILUMIA SnipeBot Launcher",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.ilumia.snipebot",
+    "productName": "ILUMIA",
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico",
+      "executableName": "ILUMIA",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": false,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "shortcutName": "ILUMIA",
+      "deleteAppDataOnUninstall": false
+    },
+    "extraResources": [
+      {
+        "from": "python/dist/bridge.exe",
+        "to": "python/bridge.exe"
+      },
+      {
+        "from": "python/",
+        "to": "python/",
+        "filter": [
+          "*.py",
+          "vinted_fetcher.py",
+          "vinted_filter.py",
+          "main_bot.py",
+          "admin_keygen.py"
+        ]
+      },
+      {
+        "from": "assets/",
+        "to": "assets/",
+        "filter": ["**/*"]
+      },
+      {
+        "from": ".env.example",
+        "to": ".env.example"
+      }
+    ],
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ]
+  },
+  "devDependencies": {
+    "electron": "^41.2.1",
+    "electron-builder": "^26.8.1"
+  }
+}
