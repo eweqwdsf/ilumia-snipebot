@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ILUMIA — Filter Editor</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:          #030303;
+  --surface:     rgba(255,255,255,0.03);
+  --surface-hi:  rgba(255,255,255,0.055);
+  --border:      rgba(255,255,255,0.07);
+  --border-hi:   rgba(255,255,255,0.14);
+  --shine:       rgba(255,255,255,0.06);
+  --text-hi:     #f0f0f0;
+  --text-mid:    rgba(255,255,255,0.38);
+  --text-lo:     rgba(255,255,255,0.13);
+  --ok:          #5a9e6f;
+  --err:         #9e5a5a;
+  --mono:        'JetBrains Mono', monospace;
+  --sans:        'Syne', 'Helvetica Neue', sans-serif;
+}
+
+html, body {
+  width: 720px;
+  height: 580px;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text-hi);
+  font-family: var(--sans);
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+/* ── Canvas background ──────────────────────────────────── */
+#bg-canvas {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+}
+
+/* ── Titlebar (close/minimize only) ───────────────────────*/
+#titlebar {
+  position: fixed; top: 0; left: 0; right: 0;
+  height: 38px;
+  display: flex; align-items: center; justify-content: flex-end;
+  padding: 0 16px;
+  z-index: 200;
+}
+#titlebar-right {
+  display: flex; gap: 6px;
+  -webkit-app-region: no-drag;
+}
+.wb {
+  cursor: pointer;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-lo);
+  font-size: 10px;
+  transition: all .18s;
+}
+#btn-minimize:hover { color: rgba(255,255,255,0.55); border-color: var(--border-hi); background: var(--surface-hi); }
+#btn-minimize:focus { outline: none; }
+#btn-close:hover    { color: #b06060; border-color: rgba(160,80,80,0.35); background: rgba(140,50,50,0.08); }
+#btn-close:focus    { outline: none; }
+
+/* ── Main layout ───────────────────────────────────────── */
+#app {
+  position: relative; z-index: 10;
+  width: 720px; height: 580px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 38px;
+}
+
+/* ── Filter shell ──────────────────────────────────────── */
+.fe-shell {
+  position: relative;
+  width: 620px;
+  height: 510px;
+  background: rgba(255,255,255,0.016);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+.fe-shell::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 20%; right: 20%; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08) 50%, transparent);
+  pointer-events: none;
+}
+
+/* corner ticks */
+.ctick {
+  position: absolute;
+  width: 7px; height: 7px;
+  border-color: var(--border-hi);
+  border-style: solid;
+  border-width: 0;
+  pointer-events: none;
+}
+.ctick.tl { top: -1px; left: -1px;  border-top-width: 1px; border-left-width: 1px; }
+.ctick.tr { top: -1px; right: -1px; border-top-width: 1px; border-right-width: 1px; }
+.ctick.bl { bottom: -1px; left: -1px;  border-bottom-width: 1px; border-left-width: 1px; }
+.ctick.br { bottom: -1px; right: -1px; border-bottom-width: 1px; border-right-width: 1px; }
+
+/* top bar — name left, price right */
+.fe-top {
+  flex-shrink: 0;
+  padding: 14px 22px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.fe-top-left {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.fe-top-label {
+  font-family: var(--sans);
+  font-size: 9px;
+  font-weight: 500;
+  color: #ffffff;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.fe-name-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  outline: none;
+  padding: 0;
+  -webkit-app-region: no-drag;
+}
+.fe-name-input::placeholder { color: rgba(255,255,255,0.15); font-weight: 400; }
+
+.fe-top-right {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+}
+.fe-price-row { display: flex; align-items: center; gap: 8px; }
+.fe-price-field { display: flex; flex-direction: column; gap: 3px; align-items: center; }
+.fe-price-label {
+  font-family: var(--sans);
+  font-size: 9px;
+  font-weight: 500;
+  color: #ffffff;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.fe-price-input {
+  width: 62px;
+  padding: 6px 8px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: #ffffff;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  outline: none;
+  text-align: center;
+  -webkit-app-region: no-drag;
+  transition: border-color .18s, background .18s;
+}
+.fe-price-input:focus { border-color: rgba(255,255,255,0.22); background: rgba(255,255,255,0.06); }
+.fe-price-sep { color: rgba(255,255,255,0.20); font-size: 15px; margin-top: 18px; }
+
+/* scrollable body */
+.fe-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 14px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.10) transparent;
+}
+.fe-body::-webkit-scrollbar { width: 4px; }
+.fe-body::-webkit-scrollbar-track { background: transparent; }
+.fe-body::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.10);
+  border-radius: 4px;
+  transition: background .2s;
+}
+.fe-body::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.20); }
+
+/* each filter row */
+.fe-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fe-cell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.fe-cell-label {
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 600;
+  color: #ffffff;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+}
+.fe-clear-btn {
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  color: #c47070;
+  font-family: var(--sans);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  padding: 0;
+  -webkit-app-region: no-drag;
+  transition: color .15s;
+}
+.fe-clear-btn:hover { color: #e07070; }
+
+/* dropdown container */
+.fe-dropdown-wrap {
+  position: relative;
+  -webkit-app-region: no-drag;
+}
+.fe-dropdown-trigger {
+  width: 100%;
+  padding: 7px 12px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 10px;
+  color: rgba(255,255,255,0.35);
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: border-color .18s, background .18s;
+  -webkit-app-region: no-drag;
+}
+.fe-dropdown-trigger:hover { border-color: rgba(255,255,255,0.14); background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.55); }
+.fe-dropdown-trigger .arrow { font-size: 8px; opacity: 0.4; transition: transform .18s; }
+.fe-dropdown-trigger.open .arrow { transform: rotate(180deg); opacity: 0.7; }
+
+.fe-dropdown-list {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0; right: 0;
+  z-index: 999;
+  background: #111111;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 12px;
+  max-height: 180px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.08) transparent;
+  padding: 4px;
+}
+.fe-dropdown-list::-webkit-scrollbar { width: 4px; }
+.fe-dropdown-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+.fe-dropdown-list.open { display: block; }
+
+/* Search input inside dropdown */
+.fe-dropdown-search {
+  width: 100%;
+  padding: 6px 10px;
+  background: rgba(255,255,255,0.05);
+  border: none;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  border-radius: 8px 8px 0 0;
+  color: #ffffff;
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 400;
+  outline: none;
+  -webkit-app-region: no-drag;
+  margin-bottom: 4px;
+  letter-spacing: 0.04em;
+}
+.fe-dropdown-search::placeholder { color: rgba(255,255,255,0.22); }
+
+.fe-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .12s;
+  -webkit-app-region: no-drag;
+}
+.fe-dropdown-item:hover { background: rgba(255,255,255,0.06); }
+.fe-dropdown-item.selected { background: rgba(255,255,255,0.05); }
+.fe-dropdown-item .check {
+  width: 14px; height: 14px;
+  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.15);
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px;
+  color: transparent;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.fe-dropdown-item.selected .check {
+  background: rgba(255,255,255,0.90);
+  border-color: rgba(255,255,255,0.90);
+  color: #000;
+}
+.fe-dropdown-item .label {
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 400;
+  color: rgba(255,255,255,0.65);
+  letter-spacing: 0.03em;
+}
+.fe-dropdown-item.selected .label { color: #ffffff; font-weight: 500; }
+
+/* tag area */
+.fe-tag-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 4px;
+  padding: 7px 10px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+  cursor: text;
+  -webkit-app-region: no-drag;
+  min-height: 40px;
+  transition: border-color .18s;
+}
+.fe-tag-wrap:focus-within { border-color: rgba(255,255,255,0.12); }
+.fe-tag-wrap .tag-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #ffffff;
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 400;
+  min-width: 60px;
+  flex: 1;
+  -webkit-app-region: no-drag;
+  padding: 1px 2px;
+}
+.fe-tag-wrap .tag-input::placeholder { color: rgba(255,255,255,0.14); }
+
+/* tags */
+.tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 6px;
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 500;
+  color: #ffffff;
+  letter-spacing: 0.02em;
+  cursor: default;
+  -webkit-app-region: no-drag;
+}
+.tag-x {
+  cursor: pointer;
+  color: rgba(255,255,255,0.28);
+  font-size: 11px;
+  line-height: 1;
+  margin-left: 1px;
+  transition: color .12s;
+}
+.tag-x:hover { color: #c47070; }
+
+/* bottom bar with two action buttons */
+.fe-bottom {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 22px;
+  border-top: 1px solid var(--border);
+  gap: 10px;
+}
+.fe-bottom .filters-status {
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.30);
+  letter-spacing: 0.05em;
+  flex: 1;
+}
+.filters-status.ok  { color: #6ab87e !important; }
+.filters-status.err { color: #c47070 !important; }
+
+.fe-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+/* base action button */
+.fe-btn {
+  -webkit-app-region: no-drag;
+  cursor: pointer;
+  padding: 9px 18px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-mid);
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  transition: border-color .18s, color .18s, background .18s, box-shadow .18s;
+  white-space: nowrap;
+}
+
+/* green — Save & Start */
+.fe-btn.green {
+  background: rgba(78,180,100,0.12);
+  border-color: rgba(78,180,100,0.40);
+  color: #6cd88a;
+}
+.fe-btn.green:hover {
+  background: rgba(78,180,100,0.22);
+  border-color: rgba(78,180,100,0.65);
+  color: #88f0a2;
+  box-shadow: 0 0 12px rgba(78,180,100,0.18);
+}
+
+/* red — Save & Return */
+.fe-btn.red {
+  background: rgba(180,78,78,0.10);
+  border-color: rgba(180,78,78,0.38);
+  color: #d07070;
+}
+.fe-btn.red:hover {
+  background: rgba(180,78,78,0.20);
+  border-color: rgba(180,78,78,0.60);
+  color: #e88888;
+  box-shadow: 0 0 12px rgba(180,78,78,0.16);
+}
+
+/* ── Version tag ────────────────────────────────────────── */
+.version {
+  font-family: var(--mono);
+  font-size: 10px; font-weight: 400;
+  color: rgba(255,255,255,0.20);
+  letter-spacing: 0.12em;
+  position: fixed; bottom: 8px; left: 0; right: 0; text-align: center; z-index: 100;
+}
+</style>
+</head>
+<body>
+
+<canvas id="bg-canvas" width="720" height="580"></canvas>
+
+<div id="titlebar">
+  <div id="titlebar-right">
+    <button class="wb" id="btn-minimize">&#x2013;</button>
+    <button class="wb" id="btn-close">&#x2715;</button>
+  </div>
+</div>
+
+<div id="app">
+  <div class="fe-shell">
+    <div class="ctick tl"></div><div class="ctick tr"></div>
+    <div class="ctick bl"></div><div class="ctick br"></div>
+
+    <!-- top: name left, prices right -->
+    <div class="fe-top">
+      <div class="fe-top-left">
+        <div class="fe-top-label" id="filters-title">New Profile</div>
+        <input id="f-name" type="text" placeholder="Untitled profile" spellcheck="false" class="fe-name-input"/>
+      </div>
+      <div class="fe-top-right">
+        <div class="fe-top-label">Price Range</div>
+        <div class="fe-price-row">
+          <div class="fe-price-field">
+            <span class="fe-price-label">Min</span>
+            <input id="f-min-price" type="number" min="0" step="0.5" class="fe-price-input"/>
+          </div>
+          <div class="fe-price-sep">&#x2013;</div>
+          <div class="fe-price-field">
+            <span class="fe-price-label">Max</span>
+            <input id="f-max-price" type="number" min="0" step="0.5" class="fe-price-input"/>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- scrollable body -->
+    <div class="fe-body" id="fe-body">
+
+      <!-- Sizes -->
+      <div class="fe-row">
+        <div class="fe-cell-header">
+          <span class="fe-cell-label">Sizes</span>
+          <button class="fe-clear-btn" data-clear="sizes">clear all</button>
+        </div>
+        <div id="f-sizes-tags" class="fe-tag-wrap" style="min-height:32px;"></div>
+        <div class="fe-dropdown-wrap">
+          <button class="fe-dropdown-trigger" id="sizes-trigger">
+            <span>Select sizes&#x2026;</span>
+            <span class="arrow">&#x25BE;</span>
+          </button>
+          <div class="fe-dropdown-list" id="sizes-list"></div>
+        </div>
+      </div>
+
+      <!-- Brands -->
+      <div class="fe-row">
+        <div class="fe-cell-header">
+          <span class="fe-cell-label">Brands</span>
+          <button class="fe-clear-btn" data-clear="brands">clear all</button>
+        </div>
+        <div id="f-brands-tags" class="fe-tag-wrap" style="min-height:32px;"></div>
+        <div class="fe-dropdown-wrap">
+          <button class="fe-dropdown-trigger" id="brands-trigger">
+            <span>Select brands&#x2026;</span>
+            <span class="arrow">&#x25BE;</span>
+          </button>
+          <div class="fe-dropdown-list" id="brands-list"></div>
+        </div>
+      </div>
+
+      <!-- Hype Keywords -->
+      <div class="fe-row">
+        <div class="fe-cell-header">
+          <span class="fe-cell-label">Hype Keywords</span>
+          <button class="fe-clear-btn" data-clear="hype">clear all</button>
+        </div>
+        <div class="fe-tag-wrap" id="f-hype-wrap">
+          <input class="tag-input" data-for="hype" placeholder="Keyword eingeben, Enter drücken…"/>
+        </div>
+      </div>
+
+      <!-- Blacklist -->
+      <div class="fe-row">
+        <div class="fe-cell-header">
+          <span class="fe-cell-label">Blacklist</span>
+          <button class="fe-clear-btn" data-clear="blacklist">clear all</button>
+        </div>
+        <div class="fe-tag-wrap" id="f-blacklist-wrap">
+          <input class="tag-input" data-for="blacklist" placeholder="Begriff eingeben, Enter drücken…"/>
+        </div>
+      </div>
+
+    </div><!-- /fe-body -->
+
+    <!-- bottom bar -->
+    <div class="fe-bottom">
+      <div class="filters-status" id="filters-status"></div>
+      <div class="fe-actions">
+        <button class="fe-btn red"   id="btn-save-return">Save Config and Return</button>
+        <button class="fe-btn green" id="btn-save-start">Save Config and Start Bot</button>
+      </div>
+    </div>
+
+  </div><!-- /fe-shell -->
+</div>
+
+<div class="version" id="version-tag"></div>
+
+<script>
+// ── Minimal star background ───────────────────────────────
+const bgCanvas = document.getElementById('bg-canvas')
+const bgCtx    = bgCanvas.getContext('2d')
+const W = 720, H = 580
+const stars = Array.from({ length: 180 }, () => ({
+  x: Math.random() * W, y: Math.random() * H,
+  r: Math.pow(Math.random(), 2.2) * 0.8 + 0.15,
+  vx: (Math.random() - 0.5) * 0.014,
+  vy: (Math.random() - 0.5) * 0.010,
+  a: Math.random() * 0.32 + 0.10,
+  freq: 0.003 + Math.random() * 0.010,
+  phase: Math.random() * Math.PI * 2,
+}))
+let t = 0, lastTime = null
+function frame(now) {
+  if (!lastTime) lastTime = now
+  const dt = Math.min((now - lastTime) / 1000, 0.05)
+  lastTime = now
+  t += dt * 0.30
+  bgCtx.clearRect(0, 0, W, H)
+  for (const s of stars) {
+    s.x += s.vx; s.y += s.vy
+    if (s.x < 0) s.x = W; if (s.x > W) s.x = 0
+    if (s.y < 0) s.y = H; if (s.y > H) s.y = 0
+    const pulse = 0.60 + 0.40 * Math.sin(t * (s.freq * 60) + s.phase)
+    bgCtx.beginPath()
+    bgCtx.arc(s.x, s.y, s.r, 0, Math.PI * 2)
+    bgCtx.fillStyle = `rgba(255,255,255,${(s.a * pulse).toFixed(3)})`
+    bgCtx.fill()
+  }
+  requestAnimationFrame(frame)
+}
+requestAnimationFrame(frame)
+
+// ── Window controls ───────────────────────────────────────
+document.getElementById('btn-close').addEventListener('click', () => window.api.closeFilterWindow())
+document.getElementById('btn-minimize').addEventListener('click', () => window.api.minimizeFilterWindow())
+
+// ── Data ──────────────────────────────────────────────────
+const FILTER_FIELDS = {
+  sizes:     { key: 'permitted_sizes' },
+  brands:    { key: 'core_brands' },
+  hype:      { key: 'hype_keywords' },
+  blacklist: { key: 'blacklist' },
+}
+
+const ALL_SIZES = [
+  'XXS','XS','S','M','L','XL','XXL','XXXL',
+  'XS / 34','S / 36','M / 38','L / 40','XL / 42','XXL / 44',
+  '34','36','38','40','42','44','46','48','50','52','54','56','58',
+  'One Size','Oversize','Small','Medium','Large','Extra Large',
+]
+
+const ALL_BRANDS = [
+  'Abercrombie & Fitch','Acne Studios','Adidas','Alpha Industries','AMIRI',
+  "Arc'teryx",'Armani','ASOS','Balenciaga','Balmain','Barbour','Bershka',
+  'Boss','Bottega Veneta','Burberry','Calvin Klein','Carhartt','Champion',
+  'Chrome Hearts','Columbia','Comme des Garçons','Corteiz','CP Company',
+  'Denim Tears','Dickies','Diesel','DKNY','Dolce & Gabbana','Dr. Martens',
+  'Ellesse','Fear of God','Fendi','Fred Perry','Givenchy','Gucci',
+  'H&M','Harley Davidson','Hugo Boss','Icebreaker','Jack & Jones',
+  'Jack Wolfskin','Karl Lagerfeld','Kenzo','Lacoste','Lee',"Levi's",
+  'Loewe','Louis Vuitton','Mango','Marc Jacobs','MCM','Miu Miu',
+  'Moncler','Napapijri','New Balance','New Era','Nike','North Face',
+  'Off-White','Palace','Palm Angels','Patagonia','Paul & Shark',
+  'Polo Ralph Lauren','Prada','Puma','Pull&Bear','Ralph Lauren',
+  'Reebok','Represent','Rhude','Rick Owens','Salomon','Sergio Tacchini',
+  'Shein','Stone Island','Stussy','Supreme','Timberland','Tommy Hilfiger',
+  'True Religion','Umbro','Under Armour','Valentino','Versace',
+  'Vintage','Vans','Vivienne Westwood','Wrangler','Yeezy','Zara',
+]
+
+let filterState = {
+  permitted_sizes: [], core_brands: [], hype_keywords: [], blacklist: [],
+  min_price: null, max_price: null,
+}
+let editingMeta = { id: null, name: '' }
+let openDropdown = null
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+}
+
+function setStatus(msg, kind = '') {
+  const el = document.getElementById('filters-status')
+  el.textContent = msg
+  el.className = 'filters-status' + (kind ? ' ' + kind : '')
+}
+
+// ── Load initial state from main process ───────────────────
+async function loadInitialState() {
+  try {
+    const data = await window.api.getFilterWindowState()
+    if (data) {
+      editingMeta = { id: data.id || null, name: data.name || '' }
+      filterState = {
+        permitted_sizes: [...(data.permitted_sizes || [])],
+        core_brands:     [...(data.core_brands     || [])],
+        hype_keywords:   [...(data.hype_keywords   || [])],
+        blacklist:       [...(data.blacklist       || [])],
+        min_price:       data.price_min != null ? Number(data.price_min) : null,
+        max_price:       data.price_max != null ? Number(data.price_max) : null,
+      }
+      document.getElementById('filters-title').textContent = data.id ? 'Edit Profile' : 'New Profile'
+      document.getElementById('f-name').value = editingMeta.name || ''
+    }
+    try {
+      const v = await window.api.getAppVersion()
+      if (v) document.getElementById('version-tag').textContent = v
+    } catch(_) {}
+    renderAllFilters()
+  } catch(e) {
+    console.error('loadInitialState error:', e)
+  }
+}
+
+// ── Dropdown helpers ──────────────────────────────────────
+function buildDropdown(listEl, field, allOptions, searchQuery = '') {
+  // Keep search input if exists
+  let searchEl = listEl.querySelector('.fe-dropdown-search')
+  listEl.innerHTML = ''
+
+  // Re-add search input
+  const search = document.createElement('input')
+  search.className = 'fe-dropdown-search'
+  search.placeholder = 'Search…'
+  search.value = searchQuery
+  search.addEventListener('input', () => {
+    buildDropdown(listEl, field, allOptions, search.value)
+    search.focus()
+  })
+  search.addEventListener('keydown', e => e.stopPropagation())
+  search.addEventListener('click', e => e.stopPropagation())
+  listEl.appendChild(search)
+
+  const key = FILTER_FIELDS[field].key
+  const selected = (filterState[key] || []).map(v => v.toLowerCase())
+  const q = searchQuery.toLowerCase().trim()
+
+  const filtered = q ? allOptions.filter(o => o.toLowerCase().includes(q)) : allOptions
+
+  filtered.forEach(opt => {
+    const isSelected = selected.includes(opt.toLowerCase())
+    const item = document.createElement('div')
+    item.className = 'fe-dropdown-item' + (isSelected ? ' selected' : '')
+    item.innerHTML = `<span class="check">${isSelected ? '&#x2713;' : ''}</span><span class="label">${escapeHtml(opt)}</span>`
+    item.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      toggleDropdownItem(field, opt, item)
+      // Re-render keeping search
+      buildDropdown(listEl, field, allOptions, search.value)
+    })
+    listEl.appendChild(item)
+  })
+
+  if (filtered.length === 0) {
+    const empty = document.createElement('div')
+    empty.style.cssText = 'padding:8px 10px; color:rgba(255,255,255,0.22); font-size:10px; font-family:var(--sans);'
+    empty.textContent = 'No results'
+    listEl.appendChild(empty)
+  }
+}
+
+function toggleDropdownItem(field, val) {
+  if (!filterState) return
+  const key = FILTER_FIELDS[field].key
+  if (!filterState[key]) filterState[key] = []
+  const lower = val.toLowerCase()
+  const idx = filterState[key].indexOf(lower)
+  if (idx === -1) filterState[key].push(lower)
+  else filterState[key].splice(idx, 1)
+  renderTagsForDropdown(field)
+  setStatus('')
+}
+
+function renderTagsForDropdown(field) {
+  const tagWrapId = field === 'sizes' ? 'f-sizes-tags' : 'f-brands-tags'
+  const wrap = document.getElementById(tagWrapId)
+  if (!wrap) return
+  wrap.innerHTML = ''
+  const key = FILTER_FIELDS[field].key
+  const list = filterState[key] || []
+  list.forEach(val => {
+    const tag = document.createElement('span')
+    tag.className = 'tag'
+    tag.innerHTML = `<span>${escapeHtml(val)}</span><span class="tag-x">&#xD7;</span>`
+    tag.querySelector('.tag-x').addEventListener('click', () => {
+      filterState[key] = filterState[key].filter(v => v !== val)
+      renderTagsForDropdown(field)
+      setStatus('')
+    })
+    wrap.appendChild(tag)
+  })
+}
+
+function openDropdownFor(field, allOptions) {
+  const triggerEl = document.getElementById(field + '-trigger')
+  const listEl    = document.getElementById(field + '-list')
+  if (!triggerEl || !listEl) return
+
+  if (openDropdown && openDropdown !== field) closeDropdown(openDropdown)
+
+  const isOpen = listEl.classList.contains('open')
+  if (isOpen) {
+    closeDropdown(field)
+  } else {
+    buildDropdown(listEl, field, allOptions)
+    listEl.classList.add('open')
+    triggerEl.classList.add('open')
+    openDropdown = field
+    // Auto-focus search
+    setTimeout(() => {
+      const search = listEl.querySelector('.fe-dropdown-search')
+      if (search) search.focus()
+    }, 30)
+  }
+}
+
+function closeDropdown(field) {
+  const triggerEl = document.getElementById(field + '-trigger')
+  const listEl    = document.getElementById(field + '-list')
+  if (listEl) listEl.classList.remove('open')
+  if (triggerEl) triggerEl.classList.remove('open')
+  if (openDropdown === field) openDropdown = null
+}
+
+document.addEventListener('click', (e) => {
+  if (openDropdown) {
+    const wrap = e.target.closest('.fe-dropdown-wrap')
+    if (!wrap) closeDropdown(openDropdown)
+  }
+})
+
+document.getElementById('sizes-trigger').addEventListener('click', (e) => {
+  e.stopPropagation()
+  openDropdownFor('sizes', ALL_SIZES)
+})
+document.getElementById('brands-trigger').addEventListener('click', (e) => {
+  e.stopPropagation()
+  openDropdownFor('brands', ALL_BRANDS)
+})
+
+// ── Free-text tags ────────────────────────────────────────
+function renderFreeTags(field) {
+  const wrapId = field === 'hype' ? 'f-hype-wrap' : 'f-blacklist-wrap'
+  const wrap = document.getElementById(wrapId)
+  if (!wrap) return
+  const key = FILTER_FIELDS[field].key
+  const list = filterState[key] || []
+  wrap.querySelectorAll('.tag').forEach(t => t.remove())
+  const input = wrap.querySelector('.tag-input')
+  list.forEach(val => {
+    const tag = document.createElement('span')
+    tag.className = 'tag'
+    tag.innerHTML = `<span>${escapeHtml(val)}</span><span class="tag-x">&#xD7;</span>`
+    tag.querySelector('.tag-x').addEventListener('click', () => {
+      filterState[key] = filterState[key].filter(v => v !== val)
+      renderFreeTags(field)
+      setStatus('')
+    })
+    wrap.insertBefore(tag, input)
+  })
+}
+
+function addFreeTag(field, raw) {
+  const val = String(raw).trim().toLowerCase()
+  if (!val) return
+  const key = FILTER_FIELDS[field].key
+  if (!filterState[key]) filterState[key] = []
+  if (filterState[key].includes(val)) return
+  filterState[key].push(val)
+  renderFreeTags(field)
+  setStatus('')
+}
+
+document.querySelectorAll('.tag-input').forEach(input => {
+  input.addEventListener('keydown', e => {
+    const field = input.dataset.for
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault()
+      addFreeTag(field, input.value)
+      input.value = ''
+    } else if (e.key === 'Backspace' && input.value === '') {
+      const key = FILTER_FIELDS[field].key
+      if (filterState && filterState[key]?.length) {
+        filterState[key].pop()
+        renderFreeTags(field)
+      }
+    }
+  })
+  input.addEventListener('blur', () => {
+    if (input.value.trim()) {
+      addFreeTag(input.dataset.for, input.value)
+      input.value = ''
+    }
+  })
+})
+
+document.querySelectorAll('.fe-tag-wrap').forEach(wrap => {
+  wrap.addEventListener('click', e => {
+    const inp = wrap.querySelector('.tag-input')
+    if (inp && e.target === wrap) inp.focus()
+  })
+})
+
+// ── Clear buttons ─────────────────────────────────────────
+document.querySelectorAll('.fe-clear-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const field = btn.dataset.clear
+    if (!filterState || !FILTER_FIELDS[field]) return
+    filterState[FILTER_FIELDS[field].key] = []
+    if (field === 'sizes' || field === 'brands') renderTagsForDropdown(field)
+    else renderFreeTags(field)
+    setStatus('')
+  })
+})
+
+// ── Price sync ────────────────────────────────────────────
+document.getElementById('f-min-price').addEventListener('input', e => {
+  const v = parseFloat(e.target.value)
+  filterState.min_price = isNaN(v) ? null : v
+  setStatus('')
+})
+document.getElementById('f-max-price').addEventListener('input', e => {
+  const v = parseFloat(e.target.value)
+  filterState.max_price = isNaN(v) ? null : v
+  setStatus('')
+})
+
+document.getElementById('f-name').addEventListener('input', e => {
+  editingMeta.name = e.target.value
+})
+
+function renderAllFilters() {
+  document.getElementById('f-min-price').value = filterState.min_price ?? ''
+  document.getElementById('f-max-price').value = filterState.max_price ?? ''
+  renderTagsForDropdown('sizes')
+  renderTagsForDropdown('brands')
+  renderFreeTags('hype')
+  renderFreeTags('blacklist')
+}
+
+// ── Collect and validate payload ──────────────────────────
+function buildPayload() {
+  const name = (editingMeta.name || '').trim()
+  if (!name) { setStatus('Name required', 'err'); return null }
+  const minP = parseFloat(filterState.min_price)
+  const maxP = parseFloat(filterState.max_price)
+  if (isNaN(minP) || isNaN(maxP) || minP < 0 || maxP <= minP) {
+    setStatus('Invalid price range', 'err'); return null
+  }
+  return {
+    id: editingMeta.id,
+    name,
+    data: {
+      hype_keywords:   filterState.hype_keywords   || [],
+      core_brands:     filterState.core_brands     || [],
+      blacklist:       filterState.blacklist       || [],
+      permitted_sizes: filterState.permitted_sizes || [],
+      price_min: minP,
+      price_max: maxP,
+    }
+  }
+}
+
+// ── Save + Return ─────────────────────────────────────────
+document.getElementById('btn-save-return').addEventListener('click', async () => {
+  const payload = buildPayload()
+  if (!payload) return
+  setStatus('Saving…')
+  try {
+    const res = await window.api.saveFilterConfig(payload.id, payload.name, payload.data)
+    if (res?.ok) {
+      setStatus('Saved ✓', 'ok')
+      if (res.config?.id) editingMeta.id = res.config.id
+      setTimeout(() => window.api.closeFilterWindow(), 600)
+    } else {
+      setStatus(res?.message || 'Save failed', 'err')
+    }
+  } catch(e) { setStatus('Save failed', 'err') }
+})
+
+// ── Save + Start Bot ──────────────────────────────────────
+document.getElementById('btn-save-start').addEventListener('click', async () => {
+  const payload = buildPayload()
+  if (!payload) return
+  setStatus('Saving…')
+  try {
+    const res = await window.api.saveFilterConfig(payload.id, payload.name, payload.data)
+    if (res?.ok) {
+      setStatus('Saved ✓ — Starting bot…', 'ok')
+      if (res.config?.id) editingMeta.id = res.config.id
+      // Signal main window to start bot, then close
+      await window.api.saveAndStartBot(editingMeta.id)
+      setTimeout(() => window.api.closeFilterWindow(), 400)
+    } else {
+      setStatus(res?.message || 'Save failed', 'err')
+    }
+  } catch(e) { setStatus('Save failed', 'err') }
+})
+
+// Boot
+loadInitialState()
+</script>
+</body>
+</html>

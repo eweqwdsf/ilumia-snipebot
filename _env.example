@@ -1,0 +1,43 @@
+# ============================================================
+#  ILUMIA+ SnipeBot — Konfiguration
+#  Kopiere diese Datei nach .env und fülle alle Werte aus.
+#  NIEMALS diese Datei mit echten Werten in Git commiten!
+# ============================================================
+
+# ── Discord ──────────────────────────────────────────────────
+DISCORD_BOT_TOKEN=DEIN_BOT_TOKEN_HIER
+DISCORD_CHANNEL_ID=DEINE_CHANNEL_ID_HIER
+ADMIN_USER_IDS=123456789,987654321
+
+# ── Supabase ─────────────────────────────────────────────────
+# WICHTIG: Hier NUR den anon/public Key verwenden, NIEMALS service_role!
+# Den service_role Key nur im Admin-Tool (admin_keygen) lokal verwenden.
+SUPABASE_URL=https://DEIN_PROJEKT.supabase.co
+SUPABASE_KEY=DEIN_ANON_KEY_HIER
+
+# ── Bridge ───────────────────────────────────────────────────
+BRIDGE_PORT=57421
+# Geteiltes Secret zwischen Electron und Python-Bridge (z.B. mit: python -c "import secrets; print(secrets.token_hex(32))")
+BRIDGE_SECRET=ZUFAELLIGES_SECRET_HIER
+
+# ── Proxy (optional) ─────────────────────────────────────────
+# Residential-Proxy Einstellungen. Leer lassen = kein Proxy.
+#
+# Unterstützte Formate:
+#   http://user:pass@host:port
+#   http://host:port
+#   socks5://user:pass@host:port
+#
+# Anbieter-Beispiele:
+#   BrightData:  http://brd-customer-XXXX-zone-XXXX:PASS@brd.superproxy.io:22225
+#   Smartproxy:  http://user:pass@gate.smartproxy.com:7000
+#   Oxylabs:     http://user:pass@pr.oxylabs.io:7777
+#
+# Für Playwright (Cookie-Fetch via Browser):
+PROXY_URL=
+
+# Mehrere Proxies für Rotation (kommagetrennt, optional):
+PROXY_LIST=
+
+# Proxy-Rotation alle N Requests (0 = deaktiviert):
+PROXY_ROTATION_INTERVAL=100
