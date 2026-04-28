@@ -70,6 +70,7 @@ BRAND_CHANNELS: dict[str, int] = {
     "ralph_lauren": 1498061115261845659,
     "lacoste":      1498062992942829630,
     "carhartt":     1498063223478423684,
+    "burberry":     1498759766057419047,
 }
 
 SEARCH_QUERIES = [
@@ -91,6 +92,7 @@ SEARCH_QUERIES = [
     {"search_text": "ralph lauren"},
     {"search_text": "polo sport"},
     {"search_text": "lacoste"},
+    {"search_text": "burberry"},
     # ── Tier A Kleidung ───────────────────────────────────────────────────
     {"search_text": "trainingsjacke"},
     {"search_text": "trainingsanzug"},
@@ -253,6 +255,8 @@ def detect_brand(item: dict) -> str:
         return "lacoste"
     if "carhartt" in text:
         return "carhartt"
+    if "burberry" in text:
+        return "burberry"
     return "other"
 
 

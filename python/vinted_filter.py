@@ -241,6 +241,34 @@ TIER_S = [
     "stussy sole",
     # ── Seltene Drops / Status ────────────────────────────────────────────
     "deadstock", "ds unworn", "sample", "player issue", "match worn",
+    # ── Hype Football Jerseys ─────────────────────────────────────────────
+    "argentina 1998", "argentinien 1998", "argentina 1986", "argentinien 1986",
+    "italy 1994", "italien 1994", "italy 1998", "italien 1998",
+    "france 1998 trikot", "frankreich trikot 1998",
+    "england 1998", "england 1996",
+    "netherlands 1994", "holland 1994", "holland 1996",
+    "türkei 2002", "turkey 2002",
+    "senegal 2002", "portugal 2002",
+    "mexico 1998", "mexico 1994",
+    "colombia 1994", "colombia 1998",
+    "usa 1994 trikot",
+    "fußball trikot 90er", "fußball trikot 00er",
+    "football jersey 90s", "football jersey 00s",
+    "vintage fußball trikot", "vintage football jersey",
+    "retro fußball trikot",
+    # ── Pasha Brands Tracksuit Tier S ─────────────────────────────────────
+    "sergio tacchini tracksuit", "sergio tacchini trainingsanzug", "sergio tacchini set",
+    "lacoste tracksuit", "lacoste trainingsanzug", "lacoste set vintage",
+    "ellesse tracksuit", "ellesse trainingsanzug", "ellesse heritage",
+    "le coq sportif tracksuit", "le coq sportif trainingsanzug",
+    "umbro tracksuit", "umbro trainingsanzug",
+    # ── Burberry Tier S ───────────────────────────────────────────────────
+    "burberry vintage", "burberry tracktop", "burberry check tracksuit",
+    "burberry sport vintage", "burberry london vintage",
+    # ── Pasha Style Jeans Tier S ─────────────────────────────────────────
+    "evisu", "evisu vintage", "evisu daicock",
+    "marithé girbaud", "girbaud",
+    "jnco",
 ]
 
 # Tier A — starkes Signal (Cut-Indikatoren — greifen wenn Core Brand vorhanden)
@@ -314,6 +342,22 @@ TIER_A_EXPLICIT = [
     "adidas fleece vintage",
     "adidas track pants vintage",
     "adidas popper pants", "adidas druckknopfhose",
+    # ── Burberry Tier A ───────────────────────────────────────────────────
+    "burberry tracksuit", "burberry trainingsanzug",
+    "burberry polo", "burberry check polo",
+    "burberry nova check", "nova check",
+    "burberry zip hoodie", "burberry crewneck",
+    # ── Pasha Style Jeans Tier A ──────────────────────────────────────────
+    "evisu jeans", "evisu denim",
+    "diesel jeans baggy", "diesel jeans vintage", "diesel baggy",
+    "armani jeans vintage", "armani exchange jeans",
+    "d&g jeans", "dolce gabbana jeans",
+    "replay jeans vintage", "replay rocco", "replay waitom",
+    "g-star raw vintage", "g star vintage",
+    "true religion jeans", "true religion baggy",
+    "lee vintage jeans", "wrangler vintage jeans",
+    "marithé françois girbaud", "girbaud jeans",
+    "jnco jeans", "baggy jeans vintage", "baggy denim vintage",
     # ── Nike Tier A ───────────────────────────────────────────────────────
     "nike trackjacket vintage", "nike trainingsjacke 90er",
     "nike windbreaker vintage", "nike half zip vintage",
@@ -333,6 +377,14 @@ TIER_A_EXPLICIT = [
     "polo windbreaker vintage",
     "polo harrington",
     "polo chaps vintage",
+]
+
+# Tier A Priority — Core Brand + diese Phrase reicht allein (kein Tier B nötig)
+TIER_A_PRIORITY = [
+    "tracksuit", "trainingsanzug", "track jacket", "trackjacket", "trainingsjacke",
+    "windbreaker", "windjacke", "nylon jacket",
+    "vintage jersey", "football shirt", "soccer shirt", "fußball trikot", "trikot vintage",
+    "half zip", "halfzip", "full zip",
 ]
 
 # Tier B — schwaches Kontext-Signal, nur in Kombination mit Tier A wertvoll
@@ -363,6 +415,7 @@ class FilterEngine:
         self.tier_s           = [s.lower() for s in (cfg.get("tier_s")            or TIER_S)]
         self.tier_a_cut       = [s.lower() for s in (cfg.get("tier_a_cut")        or TIER_A_CUT)]
         self.tier_a_explicit  = [s.lower() for s in (cfg.get("tier_a_explicit")   or TIER_A_EXPLICIT)]
+        self.tier_a_priority  = [s.lower() for s in (cfg.get("tier_a_priority")   or TIER_A_PRIORITY)]
         self.tier_b           = [s.lower() for s in (cfg.get("tier_b")            or TIER_B)]
         self.tier_c           = [s.lower() for s in (cfg.get("tier_c")            or TIER_C)]
         try:
@@ -454,6 +507,11 @@ class FilterEngine:
         has_tier_a_explicit = any(a in full_text for a in self.tier_a_explicit)
 
         has_tier_a = has_tier_a_explicit or (has_core_brand and has_cut_indicator)
+
+        # Priority: Core Brand + Tracksuit/Jersey Phrase → kein Tier B nötig
+        matched_priority = next((p for p in self.tier_a_priority if p in full_text), None)
+        if has_core_brand and matched_priority:
+            return True, f"Priority: '{matched_priority}' + Core Brand"
 
         # Tier B: Kontext-Signal
         matched_b = next((b for b in self.tier_b if b in full_text), None)
