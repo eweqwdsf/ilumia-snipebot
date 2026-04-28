@@ -54,31 +54,57 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     print("[main_bot] FEHLER: SUPABASE_URL / SUPABASE_KEY fehlen!")
     sys.exit(1)
 
-POLL_INTERVAL = 8.0  # war 20 — neue Items 2.5x schneller entdeckt
+POLL_INTERVAL = 8.0
+
+# ==========================================
+# BRAND CHANNEL ROUTING
+# Ein Channel pro Marke.
+# 0 = nicht konfiguriert → fällt auf den default DISCORD_CHANNEL_ID zurück
+# ==========================================
+BRAND_CHANNELS: dict[str, int] = {
+    "nike":         1498060717511938208,
+    "adidas":       1498060986832388249,
+    "stussy":       1498061783007629572,
+    "arcteryx":     1498061999236714496,
+    "cp_company":   1498062177695699054,
+    "ralph_lauren": 1498061115261845659,
+    "lacoste":      1498062992942829630,
+    "carhartt":     1498063223478423684,
+}
 
 SEARCH_QUERIES = [
+    # ── Tier B Kontext (breite Abdeckung) ────────────────────────────────
     {"search_text": "vintage"},
-    {"search_text": "vintedstyle"},
-    {"search_text": "2000s"},
-    {"search_text": "pasha-style"},
-    {"search_text": "90s"},
     {"search_text": "y2k"},
-    {"search_text": "jersey"},
+    {"search_text": "90s"},
+    {"search_text": "2000s"},
+    {"search_text": "retro"},
+    {"search_text": "dachboden"},
+    {"search_text": "omas keller"},
+    # ── Core Brands ───────────────────────────────────────────────────────
+    {"search_text": "nike"},
+    {"search_text": "adidas"},
+    {"search_text": "stussy"},
+    {"search_text": "carhartt"},
+    {"search_text": "arcteryx"},
+    {"search_text": "cp company"},
+    {"search_text": "ralph lauren"},
+    {"search_text": "polo sport"},
+    {"search_text": "lacoste"},
+    # ── Tier A Kleidung ───────────────────────────────────────────────────
+    {"search_text": "trainingsjacke"},
+    {"search_text": "trainingsanzug"},
     {"search_text": "tracksuit"},
     {"search_text": "windbreaker"},
-    {"search_text": "carhartt"},
-    {"search_text": "stussy"},
-    {"search_text": "chrome hearts"},
-    {"search_text": "nike"},
-    {"search_text": "ralph lauren"},
-    {"search_text": "lacoste"},
-    {"search_text": "stone island"},
-    {"search_text": "fred perry"},
-    {"search_text": "backprint jeans"},
-    {"search_text": "levis"},
-    {"search_text": "bershka"},
-    {"search_text": "true religion"},
-    {"search_text": ""},
+    {"search_text": "track jacket"},
+    # ── Tier S Spezifisch ─────────────────────────────────────────────────
+    {"search_text": "firebird"},
+    {"search_text": "beckenbauer"},
+    {"search_text": "wales bonner"},
+    {"search_text": "veilance"},
+    {"search_text": "goggle jacket"},
+    {"search_text": "polo stadium"},
+    {"search_text": "snow beach"},
 ]
 
 # ==========================================
@@ -193,6 +219,57 @@ async def notify_bot_ready():
     await notify_first_item()  # Reuse existing endpoint
 
 # ==========================================
+# ROUTING HELPERS
+# ==========================================
+def get_item_price(item: dict) -> float:
+    price_val = item.get("price")
+    if isinstance(price_val, dict):
+        return float(price_val.get("amount", 0))
+    try:
+        return float(price_val or 0)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def detect_brand(item: dict) -> str:
+    """Erkennt die Marke eines Items für Channel-Routing (nutzt brand_title + Titel)."""
+    brand_title = (item.get("brand_title") or "").lower()
+    title       = (item.get("title") or "").lower()
+    text = f"{brand_title} {title}"
+
+    if any(k in text for k in ["nike", "jordan", "nocta", "swoosh", "nikelab"]):
+        return "nike"
+    if any(k in text for k in ["adidas", "wales bonner", "y-3", "yeezy", "trefoil", "three stripes"]):
+        return "adidas"
+    if any(k in text for k in ["stussy", "stüssy"]):
+        return "stussy"
+    if any(k in text for k in ["arcteryx", "arc'teryx", "veilance"]):
+        return "arcteryx"
+    if any(k in text for k in ["cp company", "cp-company", "cp goggle", "mille miglia"]):
+        return "cp_company"
+    if any(k in text for k in ["ralph lauren", "polo sport", "polo bear", "polo stadium", "polo ski", "polo snow"]):
+        return "ralph_lauren"
+    if "lacoste" in text:
+        return "lacoste"
+    if "carhartt" in text:
+        return "carhartt"
+    return "other"
+
+
+def extract_tier(reason: str) -> str:
+    """Extrahiert das Tier aus dem Filter-Reason-String."""
+    if reason.startswith("Tier S"):
+        return "S"
+    return "AB"
+
+
+def determine_channel(brand: str) -> int:
+    """Gibt die korrekte Channel-ID zurück. Fällt auf DISCORD_CHANNEL_ID zurück wenn 0."""
+    ch_id = BRAND_CHANNELS.get(brand, 0)
+    return ch_id if ch_id else DISCORD_CHANNEL_ID
+
+
+# ==========================================
 # DISCORD BOT
 # ==========================================
 class SnipeBot(commands.Bot):
@@ -221,36 +298,39 @@ class SnipeBot(commands.Bot):
         # Notify bridge that bot is online
         await notify_bot_ready()
 
+    async def _get_channel(self, channel_id: int):
+        if channel_id not in self._channel_cache:
+            try:
+                self._channel_cache[channel_id] = await self.fetch_channel(channel_id)
+                log.info(f"✅ Channel gecacht: #{self._channel_cache[channel_id].name} ({channel_id})")
+            except Exception as e:
+                log.error(f"❌ Channel {channel_id} nicht gefunden: {e}")
+                self._channel_cache[channel_id] = None
+        return self._channel_cache[channel_id]
+
     async def _sender(self):
         await self.wait_until_ready()
-        ch = None
-        for attempt in range(5):
-            try:
-                ch = await self.fetch_channel(DISCORD_CHANNEL_ID)
-                if ch:
-                    log.info(f"✅ Sende-Channel gefunden: #{ch.name}")
-                    break
-            except Exception as e:
-                log.warning(f"⚠️  Channel fetch Versuch {attempt+1}/5: {e}")
-                await asyncio.sleep(2)
-        if not ch:
-            log.error(f"❌ Discord Channel {DISCORD_CHANNEL_ID} nicht gefunden!")
-            return
+        self._channel_cache: dict[int, any] = {}
         while True:
             payload = await self._queue.get()
-            log.info(f"📤 SEND START — Queue size: {self._queue.qsize()}")
+            channel_id = payload.get("channel_id", DISCORD_CHANNEL_ID)
+            ch = await self._get_channel(channel_id)
+            if not ch:
+                log.error(f"❌ Channel {channel_id} nicht verfügbar — überspringe")
+                continue
+            log.info(f"📤 → #{ch.name} | Queue: {self._queue.qsize()}")
             try:
                 await ch.send(embed=payload["embed"], view=payload["view"])
                 log.info(f"✅ SEND OK")
                 await asyncio.sleep(7)
             except discord.Forbidden:
-                log.error(f"❌ Bot hat keine Sendeberechtigung in #{ch.name}!")
+                log.error(f"❌ Keine Sendeberechtigung in #{ch.name}!")
             except Exception as e:
                 log.error(f"Discord Fehler: {e}")
 
-    async def alert(self, embed: discord.Embed, view: discord.ui.View):
-        await self._queue.put({"embed": embed, "view": view})
-        log.info(f"📥 QUEUED — Queue size now: {self._queue.qsize()}")
+    async def alert(self, embed: discord.Embed, view: discord.ui.View, channel_id: int):
+        await self._queue.put({"embed": embed, "view": view, "channel_id": channel_id})
+        log.info(f"📥 QUEUED (ch={channel_id}) — Queue: {self._queue.qsize()}")
 
 # ==========================================
 # SLASH COMMAND: /genlicense
@@ -400,10 +480,16 @@ async def query_task(q: dict, fetcher: VintedFetcher, filter_engine: FilterEngin
                     continue
                 ts = filter_engine._get_photo_timestamp(item)
                 age = (time.time() - ts) if ts > 0 else -1.0
-                log.info(f"🚨 ALERT! {item.get('title', '?')} ({reason})")
+                price = get_item_price(item)
+                brand = detect_brand(item)
+                tier  = extract_tier(reason)
+                brand_ch = determine_channel(brand)
+                target_channels = list(dict.fromkeys([brand_ch, DISCORD_CHANNEL_ID]))
+                log.info(f"🚨 ALERT! [{brand}|{tier}|{price:.0f}€] → {target_channels} | {item.get('title', '?')}")
                 await stats.add_alert()
                 embed, view = await build_embed(item, age, fetcher)
-                await bot.alert(embed, view)
+                for ch_id in target_channels:
+                    await bot.alert(embed, view, ch_id)
                 await notify_first_item()
         except Exception as e:
             log.error(f"Task Error ({search}): {e}")

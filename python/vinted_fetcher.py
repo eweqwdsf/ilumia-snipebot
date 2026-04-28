@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import glob
+import random
 import subprocess
 import sys
 import tempfile
@@ -88,6 +89,37 @@ def _invalidate_cache() -> None:
             log.info("🗑️  Cookie-Cache invalidiert")
     except Exception:
         pass
+
+
+def fetch_cookies_from_browsers() -> dict:
+    """Fallback: liest Vinted-Cookies direkt aus installierten Browsern (Edge, Firefox, Chrome, Brave)."""
+    try:
+        import browser_cookie3
+    except ImportError:
+        log.debug("browser_cookie3 nicht installiert — Browser-Fallback nicht verfügbar")
+        return {}
+
+    candidates = [
+        ("Edge",    browser_cookie3.edge),
+        ("Firefox", browser_cookie3.firefox),
+        ("Chrome",  browser_cookie3.chrome),
+        ("Brave",   browser_cookie3.brave),
+    ]
+
+    for name, loader in candidates:
+        try:
+            jar = loader(domain_name=".vinted.de")
+            cookies = {c.name: c.value for c in jar}
+            if _has_auth(cookies):
+                log.info(f"🍪 Browser-Fallback ({name}): {len(cookies)} Cookies, Auth vorhanden")
+                return cookies
+            if cookies:
+                log.debug(f"  {name}: {len(cookies)} Cookies aber kein Auth-Cookie")
+        except Exception as e:
+            log.debug(f"  Browser-Fallback {name} fehlgeschlagen: {e}")
+
+    log.warning("⚠️  Browser-Fallback: kein Auth-Cookie in Edge/Firefox/Chrome/Brave gefunden")
+    return {}
 
 
 def get_chromium_path() -> str | None:
@@ -378,10 +410,29 @@ def fetch_cookies_sync(domain: str) -> dict:
     return {}
 
 
+REQUEST_INTERVAL_MIN = 1.5
+REQUEST_INTERVAL_MAX = 4.0
+
+USER_AGENTS = [
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+     '"Chromium";v="147", "Not(A:Brand";v="24", "Google Chrome";v="147"'),
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+     '"Chromium";v="146", "Not(A:Brand";v="24", "Google Chrome";v="146"'),
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+     '"Chromium";v="145", "Not(A:Brand";v="24", "Google Chrome";v="145"'),
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0",
+     '"Microsoft Edge";v="147", "Chromium";v="147", "Not(A:Brand";v="24"'),
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0",
+     '"Microsoft Edge";v="146", "Chromium";v="146", "Not(A:Brand";v="24"'),
+]
+
+
 class VintedFetcher:
     def __init__(self):
         self._session = None
         self._lock = asyncio.Lock()
+        self._rate_lock = asyncio.Lock()
+        self._last_request_at = 0.0
         self._req_count = 0
         self._cookies = {}
         self._session_created_at = 0
@@ -404,14 +455,25 @@ class VintedFetcher:
 
         cookies = {}
 
-        # Fast path: Cache probieren (nur wenn nicht erzwungen frisch)
+        if force_fresh:
+            _invalidate_cache()
+
+        # 1. Cache (schnellster Weg)
         if not force_fresh:
             cookies = _load_cached_cookies()
 
-        # Wenn Cache leer/veraltet/erzwungen → Playwright-Fetch
-        if not cookies:
-            if force_fresh:
-                _invalidate_cache()
+        # 2. Installierte Browser (Edge → Firefox → Chrome → Brave)
+        if not _has_auth(cookies):
+            log.info("🔍 Suche Cookies in installierten Browsern...")
+            loop = asyncio.get_event_loop()
+            browser_cookies = await loop.run_in_executor(None, fetch_cookies_from_browsers)
+            if _has_auth(browser_cookies):
+                cookies = browser_cookies
+                _save_cached_cookies(cookies)
+
+        # 5. Playwright-Fallback (öffnet Chromium-Fenster)
+        if not _has_auth(cookies):
+            log.info("🔄 Kein Auth-Cookie in Browsern — starte Playwright...")
             try:
                 loop = asyncio.get_event_loop()
                 cookies = await asyncio.wait_for(
@@ -435,6 +497,9 @@ class VintedFetcher:
             or ""
         )
 
+        ua, sec_ch_ua = random.choice(USER_AGENTS)
+        log.info(f"🌐 User-Agent: {ua[:60]}...")
+
         headers = {
             "Accept":          "application/json, text/plain, */*",
             "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
@@ -442,12 +507,8 @@ class VintedFetcher:
             "Referer":         f"https://{VINTED_DOMAIN}/catalog",
             "Origin":          f"https://{VINTED_DOMAIN}",
             "X-CSRF-Token":    csrf,
-            "User-Agent":      (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/147.0.0.0 Safari/537.36"
-            ),
-            "Sec-Ch-Ua":          '"Chromium";v="147", "Not(A:Brand";v="24", "Google Chrome";v="147"',
+            "User-Agent":      ua,
+            "Sec-Ch-Ua":          sec_ch_ua,
             "Sec-Ch-Ua-Mobile":   "?0",
             "Sec-Ch-Ua-Platform": '"Windows"',
             "Sec-Fetch-Dest":     "empty",
@@ -483,14 +544,25 @@ class VintedFetcher:
     def _session_expired(self) -> bool:
         return time.time() - self._session_created_at > SESSION_REFRESH_INTERVAL
 
+    async def _rate_limit(self):
+        """Erzwingt zufälligen Mindestabstand zwischen allen API-Calls."""
+        async with self._rate_lock:
+            now = time.time()
+            wait = random.uniform(REQUEST_INTERVAL_MIN, REQUEST_INTERVAL_MAX) - (now - self._last_request_at)
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._last_request_at = time.time()
+
     async def fetch_newest(self, search_text: str = "") -> list:
         params = {
             "order":         "newest_first",
-            "per_page":      "30",   # war 8 — mehr Items pro Fetch = weniger "verpasst"
+            "per_page":      "30",
             "catalog_ids[]": "5",
         }
         if search_text:
             params["search_text"] = search_text
+
+        await self._rate_limit()
 
         async with self._lock:
             # Session erneuern wenn abgelaufen oder zu viele Requests
